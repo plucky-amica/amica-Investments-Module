@@ -1,0 +1,124 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template to set up S3 event triggers for Lambda functions in the dev environment.
+
+Resources:
+  # S3 Bucket for Lambda Triggers
+  MyS3Bucket1:
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: amica-a035527-useast2-392523246457-dev-cf
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt LambdaFunction1.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: bloomberg-cf/  # Prefix for Bloomberg-triggered events
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt LambdaFunction1.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: bondedge-cf/   # Prefix for Bondedge-triggered events
+
+  # Lambda Function 1 (Triggered by S3 Events)
+  LambdaFunction1:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: Lambda_Test_1_Cloud_Formation
+      Handler: index.handler
+      Role: arn:aws:iam::392523246457:role/amica-eds-dev-engineers-pipeline-role  # Replace with the actual ARN
+      Code:
+        S3Bucket: amica-a035527-useast2-392523246457-dev
+        S3Key: amica-a039986-prahalad-investments/test-investment/lambda-code/Lambda_Test_1.zip
+      Runtime: python3.12
+      MemorySize: 256
+      Timeout: 15
+
+  # Lambda Function 2 (Separate Lambda)
+  LambdaFunction2:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: Lambda_test_2
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: amica-a035527-useast2-392523246457-dev
+        S3Key: amica-a039986-prahalad-investments/test-investment/lambda-code/Lambda_test_2.zip
+      Runtime: python3.12
+      MemorySize: 256
+      Timeout: 15
+
+  # Lambda Execution Role for Lambda Function 2
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: LambdaExecutionRole-CF  # Optional: Specify a name or let CloudFormation generate one
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: LambdaS3Policy-cf
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource:
+                  - arn:aws:s3:::amica-a035527-useast2-392523246457-dev-cf/*  # Restrict to specific bucket
+                  - arn:aws:s3:::amica-a035527-useast2-392523246457-dev/*    # For Lambda Function 2 if needed
+
+  # Lambda Permission for Lambda Function 1 (Bloomberg Prefix)
+  LambdaPermission1Bloomberg:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LambdaFunction1
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref "AWS::AccountId"
+      SourceArn: !GetAtt MyS3Bucket1.Arn
+
+  # Lambda Permission for Lambda Function 1 (Bondedge Prefix)
+  LambdaPermission1Bondedge:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LambdaFunction1
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref "AWS::AccountId"
+      SourceArn: !GetAtt MyS3Bucket1.Arn
+
+  # S3 Bucket for Lambda Code (if needed)
+  LambdaS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: amica-a035527-useast2-392523246457-dev
+
+Outputs:
+  S3BucketName:
+    Description: "Name of the S3 bucket for Lambda triggers"
+    Value: !Ref MyS3Bucket1
+
+  LambdaFunction1Name:
+    Description: "Name of Lambda Function 1"
+    Value: !Ref LambdaFunction1
+
+  LambdaFunction2Name:
+    Description: "Name of Lambda Function 2"
+    Value: !Ref LambdaFunction2
